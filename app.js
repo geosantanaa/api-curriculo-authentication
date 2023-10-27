@@ -1,6 +1,6 @@
 const express = require("express");
 const admin = require('firebase-admin')
-const credentials = require('./api-firebase-d5b0e-firebase-adminsdk-9339q-a2a87e52bc.json')
+const credentials = require('./firebase_credentials.json')
 const app = express();
 const port = 8080;
 require('dotenv').config();
@@ -16,21 +16,64 @@ app.use(
 );
 app.use(express.json());
 
+  const AuthMiddleware = async (req, res, next) => {
+  const token = req.headers['authorization'] ? req.headers['authorization'].replace('Bearer ', '') : null;
+  if (!token) {
+      return res.status(401).json({ message: 'Acesso não autorizado' });
+  }
+  try {
+      const authUser = await admin.auth().verifyIdToken(token);
+      req.authUser = authUser;
+      next();
 
-app.post('/signup', async(req, res) => {
+  } catch (e) {
+      return res.sendStatus(401);
+      
+  }
+};
+app.post('/register', async (req, res) => {
   const user = {
     email: req.body.email,
     password: req.body.password
   }
-  const userResponse = await admin.auth().createUser({
-    email: user.email,
-    password: user.password,
-    emailVerified: false,
-    disabled: false,
-  })
-  res.json(userResponse)
+  try {
+    const userResponse = await admin.auth().createUser({
+      email: user.email,
+      password: user.password,
+      emailVerified: false,
+      disabled: false,
+    });
+    res.json(userResponse);
+  } catch (error) {
+    // Tratando o erro de e-mail já existente
+    if (error.code === 'auth/email-already-exists') {
+      return res.status(400).json({ error: 'O endereço de e-mail já está em uso por outra conta.' });
+    }
+    // Tratando outros erros de autenticação
+    return res.status(500).json({ error: 'Erro durante a criação do usuário.' });
+  }
+});
 
-})
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Consultando o user pelo e-mail
+    const userRecord = await admin.auth().getUserByEmail(email);
+
+    // Verificando a senha do user
+    if (userRecord && userRecord.email === email) {
+      // User autenticado com sucesso
+      return res.status(200).json({ message: "Autenticação bem-sucedida", user: userRecord });
+    } else {
+      return res.status(401).json({ error: "Credenciais inválidas" });
+    }
+  } catch (error) {
+    // Tratando erros de user não encontrado ou inválido
+    return res.status(401).json({ error: "Credenciais inválidas" });
+  }
+});
+
 
 
 const { createCurriculum, updateCurriculum, getCurriculumById, deleteCurriculum, listCurriculums } = require('./controller/CurriculumController');
